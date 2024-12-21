@@ -80,13 +80,13 @@ from uncompyle6.semantics import pysource
 from uncompyle6.semantics.check_ast import checker
 from uncompyle6.semantics.consts import (
     INDENT_PER_LEVEL,
-    MAP,
     NONE,
     PASS,
     PRECEDENCE,
     TABLE_DIRECT,
     escape,
 )
+from uncompyle6.semantics.helper import find_code_node
 from uncompyle6.semantics.pysource import (
     DEFAULT_DEBUG_OPTS,
     TREE_DEFAULT_DEBUG,
@@ -189,8 +189,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
         self.is_pypy = is_pypy
 
         # FIXME: is there a better way?
-        global MAP_DIRECT_FRAGMENT
-        MAP_DIRECT_FRAGMENT = (dict(TABLE_DIRECT, **TABLE_DIRECT_FRAGMENT),)
+        self.MAP_DIRECT_FRAGMENT = (dict(TABLE_DIRECT, **TABLE_DIRECT_FRAGMENT),)
         return
 
     f = property(
@@ -597,17 +596,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
     def n_mkfunc(self, node):
         start = len(self.f.getvalue())
 
-        if self.version >= (3, 3) or node[-2] == "kwargs":
-            # LOAD_CONST code object ..
-            # LOAD_CONST        'x0'  if >= 3.3
-            # MAKE_FUNCTION ..
-            code_node = node[-3]
-        elif node[-2] == "expr":
-            code_node = node[-2][0]
-        else:
-            # LOAD_CONST code object ..
-            # MAKE_FUNCTION ..
-            code_node = node[-2]
+        code_node = find_code_node(node, -2)
         func_name = code_node.attr.co_name
         self.write(func_name)
         self.set_pos_info(code_node, start, len(self.f.getvalue()))
@@ -655,6 +644,17 @@ class FragmentsWalker(pysource.SourceWalker, object):
 
         code = Code(cn.attr, self.scanner, self.currentclass)
         ast = self.build_ast(code._tokens, code._customize, code)
+
+        self.MAP_DIRECT = (self.TABLE_DIRECT,)
+        self.MAP_R = (self.TABLE_R, -1)
+
+        self.MAP = {
+            "stmt": self.MAP_R,
+            "call": self.MAP_R,
+            "delete": self.MAP_R,
+            "store": self.MAP_R,
+        }
+
         self.customize(code._customize)
 
         # Remove single reductions as in ("stmts", "sstmt"):
@@ -1476,7 +1476,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
         # as a custom rule
         start = len(self.f.getvalue())
         n = len(node) - 1
-
+        j = 0
         if node.kind != "expr":
             if node == "kwarg":
                 self.template_engine(("(%[0]{attr}=%c)", 1), node)
@@ -1520,9 +1520,9 @@ class FragmentsWalker(pysource.SourceWalker, object):
             self.write("(")
             if kwargs:
                 # Last arg is tuple of keyword values: omit
-                l = n - 1
+                m = n - 1
             else:
-                l = n
+                m = n
 
             if kwargs:
                 # 3.6+ does this
@@ -1534,7 +1534,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
                     j += 1
 
                 j = 0
-                while i < l:
+                while i < m:
                     self.write(sep)
                     value = self.traverse(node[i])
                     self.write("%s=%s" % (kwargs[j], value))
@@ -1542,7 +1542,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
                     j += 1
                     i += 1
             else:
-                while i < l:
+                while i < m:
                     value = self.traverse(node[i])
                     i += 1
                     self.write(sep, value)
@@ -1794,12 +1794,12 @@ class FragmentsWalker(pysource.SourceWalker, object):
 
     def template_engine(self, entry, startnode):
         """The format template interpretation engine.  See the comment at the
-        beginning of this module for the how we interpret format
+        beginning of this module for how we interpret format
         specifications such as %c, %C, and so on.
         """
 
         # print("-----")
-        # print(startnode)
+        # print(startnode.kind)
         # print(entry[0])
         # print('======')
 
@@ -1854,14 +1854,27 @@ class FragmentsWalker(pysource.SourceWalker, object):
 
                 index = entry[arg]
                 if isinstance(index, tuple):
-                    assert (
-                        node[index[0]] == index[1]
-                    ), "at %s[%d], expected %s node; got %s" % (
-                        node.kind,
-                        arg,
-                        node[index[0]].kind,
-                        index[1],
-                    )
+                    if isinstance(index[1], str):
+                        # if node[index[0]] != index[1]:
+                        #     from trepan.api import debug; debug()
+                        assert (
+                            node[index[0]] == index[1]
+                        ), "at %s[%d], expected '%s' node; got '%s'" % (
+                            node.kind,
+                            arg,
+                            index[1],
+                            node[index[0]].kind,
+                        )
+                    else:
+                        assert (
+                            node[index[0]] in index[1]
+                        ), "at %s[%d], expected to be in '%s' node; got '%s'" % (
+                            node.kind,
+                            arg,
+                            index[1],
+                            node[index[0]].kind,
+                        )
+
                     index = index[0]
                 assert isinstance(
                     index, int
@@ -1881,14 +1894,21 @@ class FragmentsWalker(pysource.SourceWalker, object):
                 assert isinstance(tup, tuple)
                 if len(tup) == 3:
                     (index, nonterm_name, self.prec) = tup
-                    assert (
-                        node[index] == nonterm_name
-                    ), "at %s[%d], expected '%s' node; got '%s'" % (
-                        node.kind,
-                        arg,
-                        nonterm_name,
-                        node[index].kind,
-                    )
+                    if isinstance(tup[1], str):
+                        assert (
+                            node[index] == nonterm_name
+                        ), "at %s[%d], expected '%s' node; got '%s'" % (
+                            node.kind,
+                            arg,
+                            nonterm_name,
+                            node[index].kind,
+                        )
+                    else:
+                        assert node[tup[0]] in tup[1], (
+                            f"at {node.kind}[{tup[0]}], expected to be in '{tup[1]}' "
+                            f"node; got '{node[tup[0]].kind}'"
+                        )
+
                 else:
                     assert len(tup) == 2
                     (index, self.prec) = entry[arg]
@@ -1983,8 +2003,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
             self.set_pos_info(last_node, startnode_start, self.last_finish)
         return
 
-    @classmethod
-    def _get_mapping(cls, node):
+    def _get_mapping(self, node):
         if (
             hasattr(node, "data")
             and len(node) > 0
@@ -1992,7 +2011,7 @@ class FragmentsWalker(pysource.SourceWalker, object):
             and not hasattr(node[-1], "parent")
         ):
             node[-1].parent = node
-        return MAP.get(node, MAP_DIRECT_FRAGMENT)
+        return self.MAP.get(node, self.MAP_DIRECT_FRAGMENT)
 
     pass
 
@@ -2099,6 +2118,7 @@ def code_deparse(
     # Build Syntax Tree from tokenized and massaged disassembly.
     # deparsed = pysource.FragmentsWalker(out, scanner, showast=showast)
     show_tree = debug_opts.get("tree", False)
+    linestarts = dict(scanner.opc.findlinestarts(co))
     deparsed = walker(
         version,
         scanner,

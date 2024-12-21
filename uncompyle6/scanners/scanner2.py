@@ -213,7 +213,7 @@ class Scanner2(Scanner):
                 names=co.co_names,
                 constants=co.co_consts,
                 cells=bytecode._cell_names,
-                linestarts=bytecode._linestarts,
+                line_starts=bytecode._linestarts,
                 asm_format="extended",
             )
 
@@ -495,7 +495,8 @@ class Scanner2(Scanner):
 
         if show_asm in ("both", "after"):
             print("\n# ---- tokenization:")
-            for t in new_tokens:
+            # FIXME: t.format() is changing tokens!
+            for t in new_tokens.copy():
                 print(t.format(line_prefix=""))
             print()
         return new_tokens, customize

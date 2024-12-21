@@ -1,4 +1,4 @@
-#  Copyright (c) 2019-2020, 2022 by Rocky Bernstein
+#  Copyright (c) 2019-2020, 2022, 2024 by Rocky Bernstein
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -24,13 +24,12 @@ from uncompyle6.semantics.customize37 import FSTRING_CONVERSION_MAP
 from uncompyle6.semantics.helper import escape_string, strip_quotes
 
 
-def customize_for_version38(self, version):
+def customize_for_version38(self, version: tuple):
     # FIXME: pytest doesn't add proper keys in testing. Reinstate after we have fixed pytest.
     # for lhs in 'for forelsestmt forelselaststmt '
     #             'forelselaststmtc tryfinally38'.split():
     #     del TABLE_DIRECT[lhs]
-
-    TABLE_DIRECT.update(
+    self.TABLE_DIRECT.update(
         {
             "async_for_stmt38": (
                 "%|async for %c in %c:\n%+%c%-%-\n\n",
@@ -144,7 +143,7 @@ def customize_for_version38(self, version):
             "whilestmt38": (
                 "%|while %c:\n%+%c%-\n\n",
                 (1, ("bool_op", "testexpr", "testexprc")),
-                (2, ("l_stmts", "l_stmts_opt", "pass")),
+                (2, ("_stmts", "l_stmts", "l_stmts_opt", "pass")),
             ),
             "whileTruestmt38": (
                 "%|while True:\n%+%c%-\n\n",

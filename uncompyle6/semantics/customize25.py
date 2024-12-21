@@ -25,7 +25,7 @@ def customize_for_version25(self, version):
     ########################
     # Import style for 2.5+
     ########################
-    TABLE_DIRECT.update(
+    self.TABLE_DIRECT.update(
         {
             "importmultiple": ("%|import %c%c\n", 2, 3),
             "import_cont": (", %c", 2),
@@ -33,6 +33,7 @@ def customize_for_version25(self, version):
             # Note: It is safe to put the variables after "as" in parenthesis,
             # and sometimes it is needed.
             "with": ("%|with %c:\n%+%c%-", 0, 3),
+            "and_then": ("%c and %c", (0, "expr"), (4, "expr")),
         }
     )
 

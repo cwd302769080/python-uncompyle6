@@ -1,34 +1,21 @@
 #!/bin/bash
 # Check out python-3.3-to-3.5 and dependent development branches.
-PYTHON_VERSION=3.3.7
-
 bs=${BASH_SOURCE[0]}
 if [[ $0 == $bs ]] ; then
     echo "This script should be *sourced* rather than run directly through bash"
     exit 1
 fi
 
-# FIXME put some of the below in a common routine
-function checkout_version {
-    local repo=$1
-    version=${2:-python-3.3-to-3.5}
-    echo Checking out $version on $repo ...
-    (cd ../$repo && git checkout $version && pyenv local $PYTHON_VERSION) && \
-	git pull
-    return $?
-}
+PYTHON_VERSION=3.3
 
-owd=$(pwd)
-
-export PATH=$HOME/.pyenv/bin/pyenv:$PATH
-
+uncompyle6_owd=$(pwd)
 mydir=$(dirname $bs)
+cd $mydir
 fulldir=$(readlink -f $mydir)
+. ./checkout_common.sh
 cd $fulldir/..
-(cd $fulldir/.. && checkout_version python-spark master && checkout_version python-xdis &&
-     checkout_version python-uncompyle6)
-rm -v */.python-version || true
+(cd $fulldir/.. && \
+     setup_version python-spark python-3.3 && \
+     setup_version python-xdis python-3.3 )
 
-git pull
-rm -v */.python-version || true
-cd $owd
+checkout_finish python-3.3-to-3.5

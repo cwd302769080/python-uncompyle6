@@ -36,6 +36,8 @@ class Python25Parser(Python26Parser):
         with_as ::= expr setupwithas store suite_stmts_opt
                        POP_BLOCK LOAD_CONST COME_FROM with_cleanup
 
+        # The last except of a "try: ... except" can do this...
+        except_suite ::= c_stmts_opt COME_FROM JUMP_ABSOLUTE POP_TOP
 
         store ::= STORE_NAME
         store ::= STORE_FAST
@@ -58,6 +60,13 @@ class Python25Parser(Python26Parser):
 
         kvlist ::= kvlist kv
         kv     ::= DUP_TOP expr ROT_TWO expr STORE_SUBSCR
+
+        _ifstmts_jump ::= c_stmts_opt COME_FROM JUMP_ABSOLUTE COME_FROM POP_TOP
+
+
+        # "and_then" is a hack around the fact we have THEN detection.
+        and_then ::= expr JUMP_IF_FALSE THEN POP_TOP expr JUMP_IF_FALSE THEN POP_TOP
+        testexpr_then ::= and_then
         """
 
     def customize_grammar_rules(self, tokens, customize):

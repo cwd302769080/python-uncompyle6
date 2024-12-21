@@ -26,7 +26,7 @@ from uncompyle6.semantics.consts import (
     PRECEDENCE,
     minint,
 )
-from uncompyle6.semantics.helper import find_code_node, flatten_list
+from uncompyle6.semantics.helper import find_code_node, flatten_list, print_docstring
 from uncompyle6.util import better_repr, get_code_name
 
 
@@ -541,70 +541,7 @@ class NonterminalActions:
         else:
             docstring = node[0].pattr
 
-        quote = '"""'
-        if docstring.find(quote) >= 0:
-            if docstring.find("'''") == -1:
-                quote = "'''"
-
-        self.write(indent)
-        docstring = repr(docstring.expandtabs())[1:-1]
-
-        for orig, replace in (
-            ("\\\\", "\t"),
-            ("\\r\\n", "\n"),
-            ("\\n", "\n"),
-            ("\\r", "\n"),
-            ('\\"', '"'),
-            ("\\'", "'"),
-        ):
-            docstring = docstring.replace(orig, replace)
-
-        # Do a raw string if there are backslashes but no other escaped characters:
-        # also check some edge cases
-        if (
-            "\t" in docstring
-            and "\\" not in docstring
-            and len(docstring) >= 2
-            and docstring[-1] != "\t"
-            and (docstring[-1] != '"' or docstring[-2] == "\t")
-        ):
-            self.write("r")  # raw string
-            # Restore backslashes unescaped since raw
-            docstring = docstring.replace("\t", "\\")
-        else:
-            # Escape the last character if it is the same as the
-            # triple quote character.
-            quote1 = quote[-1]
-            if len(docstring) and docstring[-1] == quote1:
-                docstring = docstring[:-1] + "\\" + quote1
-
-            # Escape triple quote when needed
-            if quote == '"""':
-                replace_str = '\\"""'
-            else:
-                assert quote == "'''"
-                replace_str = "\\'''"
-
-            docstring = docstring.replace(quote, replace_str)
-            docstring = docstring.replace("\t", "\\\\")
-
-        lines = docstring.split("\n")
-
-        self.write(quote)
-        if len(lines) == 0:
-            self.println(quote)
-        elif len(lines) == 1:
-            self.println(lines[0], quote)
-        else:
-            self.println(lines[0])
-            for line in lines[1:-1]:
-                if line:
-                    self.println(line)
-                else:
-                    self.println("\n\n")
-                    pass
-                pass
-            self.println(lines[-1], quote)
+        print_docstring(self, indent, docstring)
         self.prune()
 
     def n_elifelsestmtr(self, node: SyntaxTree):
@@ -926,66 +863,18 @@ class NonterminalActions:
     n_set = n_build_set = n_tuple = n_list
 
     def n_list_comp(self, node):
-        """List comprehensions"""
-        p = self.prec
-        self.prec = 100
-        if self.version >= (2, 7):
-            if self.is_pypy:
-                self.n_list_comp_pypy27(node)
-                return
-            n = node[-1]
-        elif node[-1] == "delete":
-            if node[-2] == "JUMP_BACK":
-                n = node[-3]
-            else:
-                n = node[-2]
-
-        assert n == "list_iter"
-
-        # Find the list comprehension body. It is the inner-most
-        # node that is not list_.. .
-        # FIXME: DRY with other use
-        while n == "list_iter":
-            n = n[0]  # iterate one nesting deeper
-            if n == "list_for":
-                n = n[3]
-            elif n == "list_if":
-                n = n[2]
-            elif n == "list_if_not":
-                n = n[2]
-        assert n == "lc_body"
-        self.write("[ ")
-
-        if self.version >= (2, 7):
-            expr = n[0]
-            list_iter = node[-1]
+        self.write("[")
+        if node[0].kind == "load_closure":
+            assert self.version >= (3, 0)
+            self.listcomp_closure3(node)
         else:
-            expr = n[1]
-            if node[-2] == "JUMP_BACK":
-                list_iter = node[-3]
+            if node == "listcomp_async":
+                list_iter_index = 5
             else:
-                list_iter = node[-2]
-
-        assert expr == "expr"
-        assert list_iter == "list_iter"
-
-        # FIXME: use source line numbers for directing line breaks
-
-        line_number = self.line_number
-        last_line = self.f.getvalue().split("\n")[-1]
-        l = len(last_line)
-        indent = " " * (l - 1)
-
-        self.preorder(expr)
-        line_number = self.indent_if_source_nl(line_number, indent)
-        self.preorder(list_iter)
-        l2 = self.indent_if_source_nl(line_number, indent)
-        if l2 != line_number:
-            self.write(" " * (len(indent) - len(self.indent) - 1) + "]")
-        else:
-            self.write(" ]")
-        self.prec = p
-        self.prune()  # stop recursing
+                list_iter_index = 1
+            self.comprehension_walk_newer(node, list_iter_index, 0)
+        self.write("]")
+        self.prune()
 
     def n_list_comp_pypy27(self, node):
         """List comprehensions in PYPY."""
@@ -1035,20 +924,6 @@ class NonterminalActions:
         self.write(" ]")
         self.prec = p
         self.prune()  # stop recursing
-
-    def n_list_comp(self, node):
-        self.write("[")
-        if node[0].kind == "load_closure":
-            assert self.version >= (3, 0)
-            self.listcomp_closure3(node)
-        else:
-            if node == "listcomp_async":
-                list_iter_index = 5
-            else:
-                list_iter_index = 1
-            self.comprehension_walk_newer(node, list_iter_index, 0)
-        self.write("]")
-        self.prune()
 
     def n_mkfunc(self, node):
         code_node = find_code_node(node, -2)

@@ -391,6 +391,10 @@ class PythonParser(GenericASTBuilder):
 
         returns ::= return
         returns ::= _stmts return
+        
+        # NOP
+        stmt     ::= nop_stmt
+        nop_stmt ::= NOP
 
         """
         pass
@@ -668,6 +672,8 @@ def get_python_parser(
         version = tuple([int(v) for v in version.split(".")[:2]])
 
     version = version[:2]
+
+    p = None
 
     # FIXME: there has to be a better way...
     # We could do this as a table lookup, but that would force us

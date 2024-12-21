@@ -216,7 +216,7 @@ class Scanner3(Scanner):
         collection_type: str,
     ) -> Optional[list]:
         """
-        Try to a replace sequence of instruction that ends with a
+        Try to replace a sequence of instruction that ends with a
         BUILD_xxx with a sequence that can be parsed much faster, but
         inserting the token boundary at the beginning of the sequence.
         """
@@ -298,8 +298,9 @@ class Scanner3(Scanner):
         )
         return new_tokens
 
-    def bound_map_from_inst(
-        self, insts: list, next_tokens: list, inst: Instruction, t: Token, i: int
+    # Move to scanner35?
+    def bound_map_from_inst_35(
+        self, insts: list, next_tokens: list, t: Token, i: int
     ) -> Optional[list]:
         """
         Try to a sequence of instruction that ends with a BUILD_MAP into
@@ -315,6 +316,8 @@ class Scanner3(Scanner):
         if count < 5:
             return None
 
+        # Newer Python BUILD_MAP argument's count is a
+        # key and value pair so it is multiplied by two.
         collection_start = i - (count * 2)
         assert (count * 2) <= i
 
@@ -338,7 +341,7 @@ class Scanner3(Scanner):
                 attr=collection_enum,
                 pattr="CONST_MAP",
                 offset=f"{start_offset}_0",
-                linestart=False,
+                linestart=insts[collection_start].starts_line,
                 has_arg=True,
                 has_extended_arg=False,
                 opc=self.opc,
@@ -356,6 +359,7 @@ class Scanner3(Scanner):
                     has_arg=True,
                     has_extended_arg=False,
                     opc=self.opc,
+                    optype="pseudo",
                 )
             )
             new_tokens.append(
@@ -368,7 +372,7 @@ class Scanner3(Scanner):
                     has_arg=True,
                     has_extended_arg=False,
                     opc=self.opc,
-                    optype=insts[j + 1].optype,
+                    optype="pseudo",
                 )
             )
         new_tokens.append(
@@ -381,7 +385,7 @@ class Scanner3(Scanner):
                 has_arg=t.has_arg,
                 has_extended_arg=False,
                 opc=t.opc,
-                optype=t.optype,
+                optype="pseudo",
             )
         )
         return new_tokens
@@ -425,7 +429,7 @@ class Scanner3(Scanner):
                 names=co.co_names,
                 constants=co.co_consts,
                 cells=bytecode._cell_names,
-                linestarts=bytecode._linestarts,
+                line_starts=bytecode._linestarts,
                 asm_format="extended",
             )
 
@@ -490,7 +494,16 @@ class Scanner3(Scanner):
         last_op_was_break = False
         new_tokens = []
 
+        skip_end_offset = None
+
         for i, inst in enumerate(self.insts):
+            # BUILD_MAP for < 3.5 can skip *forward* in instructions and
+            # replace them. So we use the below to get up to the position
+            # scanned and replaced forward
+            if skip_end_offset and inst.offset <= skip_end_offset:
+                continue
+            skip_end_offset = None
+
             opname = inst.opname
             argval = inst.argval
             pattr = inst.argrepr
@@ -524,17 +537,21 @@ class Scanner3(Scanner):
                 if try_tokens is not None:
                     new_tokens = try_tokens
                     continue
+
             elif opname in ("BUILD_MAP",):
-                try_tokens = self.bound_map_from_inst(
-                    self.insts,
-                    new_tokens,
-                    inst,
-                    t,
-                    i,
-                )
-                if try_tokens is not None:
-                    new_tokens = try_tokens
-                    continue
+                if self.version >= (3, 5):
+                    try_tokens = self.bound_map_from_inst_35(
+                        self.insts,
+                        new_tokens,
+                        t,
+                        i,
+                    )
+                    if try_tokens is not None:
+                        new_tokens = try_tokens
+                        continue
+                        pass
+                    pass
+                pass
 
             argval = inst.argval
             op = inst.opcode
@@ -789,7 +806,8 @@ class Scanner3(Scanner):
 
         if show_asm in ("both", "after"):
             print("\n# ---- tokenization:")
-            for t in new_tokens:
+            # FIXME: t.format() is changing tokens!
+            for t in new_tokens.copy():
                 print(t.format(line_prefix=""))
             print()
         return new_tokens, customize
